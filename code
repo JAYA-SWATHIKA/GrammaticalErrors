@@ -1,0 +1,301 @@
+! pip install jsonlines
+import pandas as pd
+import numpy as np
+import os
+import jsonlines
+import re
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings 
+warnings.filterwarnings('ignore')
+from tqdm import tqdm
+from nltk.corpus import stopwords
+from wordcloud import WordCloud
+import nltk
+from nltk.tokenize import word_tokenize
+from collections import Counter
+from google.colab import drive
+drive.mount('/content/drive')
+'''THIS CELL READS THE LANG-8 DATASET FILE AND EXTRACTS INCORRECT AND CORRECT SENTENCES ONLY'''
+
+f1 = open("/content/drive/MyDrive/Colab Notebooks/cs2/lang-8/lang-8-en-1.0/entries.train") # OPENING THE FILE 
+lines1 = f1.readlines() # READING THE LINES
+inp1 = [] # LIST FOR STORING INCORRECT SENTENCES
+tgt1 = [] # LIST FOR STORING
+
+for i in lines1: # FOR EACH LINE 
+    lst = i.split("\t") # WE ARE SPLITTING THE LINE AT \t
+    
+# IF LENGTH OF THE LIST IS GREATER THAN 5 THEN CORRECT SENTTENCE EXISTS OTHERWISE ONLY INCORRECT SENTENCE IS PRESENT 
+    if len(lst)>5  :     #IF LENGTH IS GREATER THAN 5  
+        inp1.append(lst[-2]) # APPEND SECONG LAST ITEM IN LIST WHICH IS INCORRECT SENTENCE
+        tgt1.append(lst[-1]) # APPEND LAST ITEM IN THE LIST WHICH IS CORRECT SENTECE.
+        '''THIS CELL READS THE SMS_TEXT DATASET FILE AND EXTRACTS INCORRECT AND CORRECT SENTENCES ONLY'''
+
+
+f2 = open("/content/drive/MyDrive/Colab Notebooks/cs2/text_sms/release/en2cn-2k.en2nen2cn","r",encoding="UTF-8") # READING THE FILE
+
+lines2 = f2.readlines() # STORING ALL THE LINES IN A VARIABLE
+inp2 = [] # LIST FOR STORING INCORRECT SENTENCES
+tgt2 = [] # LIST FOR STORING CORRECT SENTENCES
+
+# THE DASET CONTAINS 2000 DATAPOINTS, THEREFORE RUNNING THE LOOP FOR 2000 TIMES
+for i in range(2000): 
+    inp2.append(lines2[i*3]) #APPEDING FIRST ROW FOR EACH DATAPOINT
+    tgt2.append(lines2[i*3+1]) # APPENDING SECOND ROW FOR EACH DATAPOINT'''THIS CELL COMBINES BOTH THE DATASETS TOGETHER'''
+
+df = pd.DataFrame() # CREATING THE DATAFRAME
+df["input"] = inp1+inp2 # ADDING BOTH THE LISTS OF INPUTS TO ONE COLUMN
+df["output"] =  tgt1+tgt2 # ADDING BOTH THE LISTS OF TARGETS TO ONE COLUMN
+df["y"] = list("1"*len(inp1)) + list("2"*len(inp2))
+df
+'''THIS FUNCTION REMOVES THE SPACES BETWEEN THE CONTRACTED WORDS AND REMOVING UNNECESSARY SPACES IN THE SENTENCES
+            ca n't ==> can't 
+            I 'm ===> I'm ...etc
+'''
+def remove_spaces(text):
+    text = re.sub(r" '(\w)",r"'\1",text)
+    text = re.sub(r" \,",",",text)
+    text = re.sub(r" \.+",".",text)
+    text = re.sub(r" \!+","!",text)
+    text = re.sub(r" \?+","?",text)
+    text = re.sub(" n't","n't",text)
+    text = re.sub("[\(\)\;\_\^\`\/]","",text)
+    
+    return text
+
+
+'''THIS FUNCTION DECONTRACTS THE CONTRACTED WORDS'''
+#REF : https://stackoverflow.com/questions/19790188/expanding-english-language-contractions-in-python
+
+def decontract(text):
+    text = re.sub(r"won\'t", "will not", text)
+    text = re.sub(r"can\'t", "can not", text)
+    text = re.sub(r"n\'t", " not", text)
+    text = re.sub(r"\'re", " are", text)
+    text = re.sub(r"\'s", " is", text)
+    text = re.sub(r"\'d", " would", text)
+    text = re.sub(r"\'ll", " will", text)
+    text = re.sub(r"\'t", " not", text)
+    text = re.sub(r"\'ve", " have", text)
+    text = re.sub(r"\'m", " am", text)
+    return text
+
+
+'''THIS FUNCTION PREPROCESSES THE TEXT '''
+def preprocess(text):
+    text = re.sub("\n","",text)
+    text = remove_spaces(text)   # REMOVING UNWANTED SPACES
+    text = re.sub(r"\.+",".",text)
+    text = re.sub(r"\!+","!",text)
+    text = decontract(text)    # DECONTRACTION
+    text = re.sub("[^A-Za-z0-9 ]+","",text)
+    text = text.lower()
+    return text
+'''HERE WE ARE APPLYIN PREPROCESS FUNCTION TO INPUT AND OUTPUT SENTENCES'''
+
+df["processed_input"] = df.input.apply(preprocess) # APPLYING PREPROCESS FUNCTION TO INPUT 
+df["processed_output"] = df.output.apply(preprocess) # APPLYING PREPROCESS FUNCION TO OUTPUT
+df =df.drop(["input","output"],axis=1)# TOTAL DATAPOINTS
+df.shape'''CHECK FOR NULL VALUES'''
+
+df.info()'''THIS CELL REMOVES ROWS WITH NULL VALUES IN INPUT AND OUTPUT TEXT'''
+
+df = df[df.processed_input.notnull()]
+df = df[df.processed_output.notnull()]'''DROPPING THE DUPLICATES'''
+
+df = df.drop_duplicates()
+df'''CHECK THE NUMBER OF DATAPOINTS LEFT AFTER REMOVING DUPLICATES'''
+
+df.info()
+'''THIS CELL PLOTS THE PDF AND CDF OF LENGTH OF CHARACHERTS AND NUMBER OF WORDS FOR INPUT TEXT'''
+
+# THIS PART OF CODE PLOTS THE PDF OF THE LENTH OF INPUT TEXT
+plt.figure(figsize=(16,10))
+plt.subplot(2,2,1)
+sns.set_style("darkgrid")
+sns.distplot(df.processed_input.apply(lambda x:len(str(x))),color="green",bins=20)
+plt.title("Pdf Length of Input Text")
+plt.xlabel("Length of Input Text")
+plt.ylabel("PDF")
+# THIS PART OF CODE PLOTS THE CDF OF THE LENGTH OF INPUT TEXT
+plt.subplot(2,2,2)
+sns.kdeplot(df.processed_input.apply(lambda x:len(str(x))),color="green",cumulative=True)
+plt.title("Cdf Length of Input Text")
+plt.xlabel("Length of Input Text")
+plt.ylabel("CDF")
+# THIS PART OF CODE PLOTS THE PDF OF NUMBER OF WORDS IN INPUT TEXT
+plt.subplot(2,2,3)
+sns.distplot(df.processed_input.apply(lambda x: len(str(x).split())),color="brown",bins=20)
+plt.title("Pdf Number of Words")
+plt.xlabel("Number of Words")
+plt.ylabel("PDF")
+# THIS PART OF CODE PLOTS THE CDF OF NUMBER OF WORDS IN INPUT TEXT
+plt.subplot(2,2,4)
+sns.kdeplot(df.processed_input.apply(lambda x: len(str(x).split())),color="brown",cumulative=True)
+plt.xlabel("Number of Words")
+plt.title("Cdf Number of Words")
+plt.ylabel("CDF")
+plt.show()print('Max Input Length = ',df.processed_input.apply(lambda x:len(str(x))).max())
+print("99th Percentile of Number of Characters = ",np.percentile(df_clean.processed_input.apply(lambda x:len(str(x))),99))print("Max Input Words = ", df_clean.processed_input.apply(lambda x: len(str(x).split())).max())
+print("99th Percentile of Number of Words = ",np.percentile(df_clean.processed_input.apply(lambda x: len(str(x).split())),99))'''THIS CELL PLOTS THE PDF AND CDF OF LENGTH OF CHARACHERTS AND NUMBER OF WORDS FOR OUTPUT TEXT'''
+
+# THIS PART OF CODE PLOTS THE PDF OF THE LENTH OF OUTPUT TEXT
+plt.figure(figsize=(16,10))
+plt.subplot(2,2,1)
+sns.set_style("darkgrid")
+sns.distplot(df.processed_output.apply(lambda x:len(str(x))),color="green",bins=20)
+plt.title("Pdf Length of Output Text")
+plt.xlabel("Length of Output Text")
+plt.ylabel("PDF")
+# THIS PART OF CODE PLOTS THE CDF OF THE LENGTH OF OUTPUT TEXT
+plt.subplot(2,2,2)
+sns.kdeplot(df.processed_output.apply(lambda x:len(str(x))),color="green",cumulative=True)
+plt.title("Cdf Length of Output Text")
+plt.xlabel("Length of Output Text")
+plt.ylabel("CDF")
+# THIS PART OF CODE PLOTS THE PDF OF NUMBER OF WORDS IN OUTPUT TEXT
+plt.subplot(2,2,3)
+sns.distplot(df.processed_output.apply(lambda x: len(str(x).split())),color="brown",bins=20)
+plt.title("Pdf Number of Words")
+plt.xlabel("Number of Words")
+plt.ylabel("PDF")
+# THIS PART OF CODE PLOTS THE CDF OF NUMBER OF WORDS IN OUTPUT TEXT
+plt.subplot(2,2,4)
+sns.kdeplot(df.processed_output.apply(lambda x: len(str(x).split())),color="brown",cumulative=True)
+plt.xlabel("Number of Words")
+plt.title("Cdf Number of Words")
+plt.ylabel("CDF")
+plt.show()'''THIS CELL FORMS THE CORPUS FOR INPUT TEXT'''
+
+
+input_corpus="" # PLACEHOLDER
+
+for i in tqdm(df["processed_input"].values): # FOR EACH POINTS IN THE DATASET
+   
+    input_corpus += " " +str(i) # JOINGING THE SRTING '''THIS CELL FORMS THE WORDCLOUD FOR INPUT TEXT USING THE CORPUS FORMED ABOVE'''
+
+stopword = stopwords.words('english') #STORING THE STOPWORDS 
+
+# FORMING THE WORD CLOUD
+wordcloud_input = WordCloud(width = 800, height = 800,
+                 background_color ='black',
+                 stopwords = stopword,
+                 min_font_size = 10).generate(input_corpus)
+'''THIS CELL PLOTS THE WORDCLOUD'''
+
+plt.figure(figsize = (16, 10))
+plt.imshow(wordcloud_input)
+plt.title("Input Text")
+plt.axis("off")
+plt.show()'''THIS CELL FORMS THE CORPUS FOR OUTPUT TEXT'''
+
+# PLACEHOLDER
+output_corpus = ""
+
+# FOR EACH POINTS IN THE DATASET
+for i in tqdm(df["processed_output"].values):
+    # JOINGING THE SRTING 
+   
+    output_corpus += " " +str(i)'''THIS CELL FORMS THE WORDCLOUD FOR OUTPUT TEXT USING THE CORPUS FORMED ABOVE'''
+
+stopword = stopwords.words('english') # STORING THE STOPWORDS
+
+# FORMING THE WORDCLOUD
+wordcloud_output = WordCloud(width = 800, height = 800,
+                 background_color ='black',
+                 stopwords = stopword,
+                 min_font_size = 10).generate(output_corpus) 
+ 
+'''PLOTTING THE WORDS CLOUD'''
+
+plt.figure(figsize = (16, 10))
+plt.imshow(wordcloud_output)
+plt.title("Output Text")
+plt.axis("off")
+plt.show()'''THIS FUNCTION TAKES IN THE DATAFRAME AND OUPUTS THE CORPUS FOR WRONG WORDS AND CORRECTED WORDS'''
+
+def wrong_words(df):
+    # CONVERTING THE SENTENCES OF INPUT TO WORDS AND CONVERTING TO SETS
+    inp = df.processed_input.apply(lambda x: set(str(x).split()))
+    
+    # CONVERTING THE SENTENCES OF OUTPUT TO WORDS AND CONVERTING TO SETS
+    out = df.processed_output.apply(lambda x: set(str(x).split()))
+    
+    # GETTIN THE SET OF WRONG WORDS 
+    df_ww = (inp-out).apply(list)
+    
+    # GETTING THE ST OF CORRECTED SENTENCES
+    df_corrected = (out-inp).apply(list)
+    
+    # JOINING ALL WORDS AND FORIMING A LONG TEXT 
+    ww_corpus = ""
+    for i in df_ww.values:
+        
+        if len(i)>0:
+            ww_corpus+= " "+ " ".join(i) 
+            
+    # JOINING ALL WORDS AND FORIMING A LONG TEXT 
+    corr_corpus =""       
+    for i in df_corrected.values:
+        if len(i)>0:
+            corr_corpus += " "+ " ".join(i)    
+        
+    # RETURNING THE WRONG WORDS TEXT AND CORRECTED WORDS TEXT          
+    return ww_corpus,corr_corpus
+'''THIS CELL FORMS THE WORD CLOUD FOR WRONG WORDS AND CORRECTED WORDS'''# GETTING THE TEXT FOR WRONG WORDS AND CORRECTED WORDS
+ww_corpus,corr_corpus = wrong_words(df)
+
+# FORMING WORD CLOUD FOR WROND WORDS
+wordcloud_ww = WordCloud(width = 800, height = 800,
+                 background_color ='black',
+                 min_font_size = 10).generate(ww_corpus)
+
+# FORMING WORD CLOUD FOR CORRECTED WORDS
+wordcloud_corr = WordCloud(width = 800, height = 800,
+                 background_color ='black',
+                 min_font_size = 10).generate(corr_corpus)
+'''PLOTTING THE WORD CLOUD'''
+
+# PLOTTING WORD CLOUD FOR WRONG WORDS
+plt.figure(figsize = (16, 10))
+plt.subplot(1,2,1)
+plt.imshow(wordcloud_ww)
+plt.title("Wrong Words")
+plt.axis("off")
+
+# PLOTTING WORD CLOUD FOR CORRECTED WORDS
+plt.subplot(1,2,2)
+plt.imshow(wordcloud_corr)
+plt.title("Corrected Words")
+plt.axis("off")
+plt.show()def pos(text):
+    pos = nltk.pos_tag(word_tokenize(text))
+    pos = [j for i ,j in pos]
+    return pos
+
+tags_input = df.processed_input.apply(lambda x: pos(x))
+tags_input = [ j for i in tags_input for j in i]
+counter_input = Counter(tags_input) 
+inp_10 = list(zip(*counter_input.most_common(10)))
+plt.figure(figsize=(16,8))
+sns.barplot(x = list(inp_10[0]) , y= list(inp_10[1]))
+plt.title("Top 10 POS: Input")
+plt.xlabel("POS")
+plt.ylabel("Count")
+plt.show()
+def pos(text):
+    pos = nltk.pos_tag(word_tokenize(text))
+    pos = [j for i ,j in pos]
+    return pos
+
+tags_output = df.processed_output.apply(lambda x: pos(x))
+tags_output = [ j for i in tags_output for j in i]
+counter_output = Counter(tags_output) 
+out_10 = list(zip(*counter_output.most_common(10)))
+plt.figure(figsize=(16,8))
+sns.barplot(x = list(out_10[0]) , y= list(out_10[1]))
+plt.title("Top 10 POS: Output")
+plt.xlabel("Output POS")
+plt.ylabel("Count")
+plt.show()df[["processed_input","processed_output","y"]].to_csv("/content/drive/MyDrive/Colab Notebooks/cs2/processed_data.csv",index=False)
